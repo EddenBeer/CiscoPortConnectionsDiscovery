@@ -14,66 +14,160 @@ from gi.repository import Gtk
 class Main():
     def __init__(self):
         self.builder = Gtk.Builder()
-        self.builder.add_from_file('CopyDataToArray.glade')
+        self.builder.add_from_file('glade/CiscoPortConnectionsDiscovery.glade')
         # Connect the signals/events from the glade file
         self.builder.connect_signals(self)
 
         #Get objects from glade file
+        self.cbb_from_switch = self.builder.get_object('cbb_from_switch')
+        self.ent_IP_address = self.builder.get_object('ent_IP_address')
+        self.ent_password = self.builder.get_object('ent_password')
+        self.statusbar_1 = self.builder.get_object('statusbar_1')
+        self.statusbar_2 = self.builder.get_object('statusbar_2')
 
-         #Get the window object and show it
-        self.window = self.builder.get_object("applicationwindow1")
+        #Get the window object and show it
+        self.window = self.builder.get_object("applicationwindow")
         self.window.show_all()
         #Close main when window gets closed
         self.window.connect("destroy", Gtk.main_quit)
 
         #Declaration of variables
+        self.arp_filename = ''
+        self.arp_filename = ''
+        self.host_list = []
+        self.mac_list = []
+        self.port_list = []
 
         # its context_id - not shown in the UI but needed to uniquely identify
         # the source of a message
-        self.context_id = self.statusbar.get_context_id("status")
+        self.context_id = self.statusbar_1.get_context_id("status")
         # we push a message onto the statusbar's stack
-        self.statusbar.push(self.context_id, "Waiting for you to do something...")
+        self.statusbar_1.push(self.context_id, "Waiting for you to do something...")
+
+        # its context_id - not shown in the UI but needed to uniquely identify
+        # the source of a message
+        self.context_id = self.statusbar_2.get_context_id("status")
+        # we push a message onto the statusbar's stack
+        self.statusbar_2.push(self.context_id, "Press the Start Discovery button")
+
+    def on_btn_quit_clicked(self, *args):
+        """
+        Close main if button is clicked
+        :param args:
+        """
+        Gtk.main_quit(*args)
 
 
+    def on_btn_help_clicked(self, button):
+        """
+        Open help dialog form
+        :param button:
+        """
 
-        self.file = None
-        FileDialog.open_file(self)
+    def on_btn_start_clicked(self, button):
+        """
+        Start discovery process
+        :param button:
+        :return:
+        """
+        fd_arp = FileDialog
+        fd_arp.open_file(self, 'Select the ARP text file')
         #Check the response of the dialog
-        if FileDialog.get_response(self) == Gtk.ResponseType.OK:
-            self.file = FileDialog.get_filename(self)
-            self.statusbar.push(self.context_id, self.file)
+        if fd_arp.get_response(self) == Gtk.ResponseType.OK:
+            self.arp_filename = fd_arp.get_filename(self)
+            self.statusbar_1.push(self.context_id, self.arp_filename)
+            self.statusbar_2.push(self.context_id, 'Select mac address file')
         else:
-            MessageBox.warning('No file is selected', 'Click Generate code again and select a CSV file.')
-            self.statusbar.push(self.context_id, 'No file selected')
+            self.statusbar_1.push(self.context_id, 'No arp file selected')
+            self.statusbar_2.push(self.context_id, 'Try again')
+            warn = MessageBox.warning
+            warn('No file is selected', 'Click Start discovery again and select a ARP file.')
             return
-        #Open the file in a csv reader
-        #f = open(self.file)
-        #self.reader = csv.reader(f, delimiter=',')
+        del fd_arp
+
+        #Open de mac address and arp file generated from the switch
+        fd_mac = FileDialog
+        fd_mac.open_file(self, 'Select mac address text file')
+        #Check the response of the dialog
+        if fd_mac.get_response(self) == Gtk.ResponseType.OK:
+            self.mac_filename = fd_mac.get_filename(self)
+            self.statusbar_2.push(self.context_id, self.mac_filename)
+        else:
+            self.statusbar_1.push(self.context_id, 'No mac address file selected')
+            self.statusbar_2.push(self.context_id, 'Try again')
+            warn = MessageBox.warning
+            warn('No file is selected', 'Click Start discovery again and select a mac file.')
+            return
+        del fd_mac
 
         start = datetime.datetime.now()  #For performance testing
-    '''
-    Open cisco file
 
-    Open mac adress - ip adres file IP scanner
+        #Filter the data and store data in host object lists
+        arp_file = open(self.arp_filename, 'r')
+        for line in arp_file:
+            x = line.split()
+            for strings in x:
+                if strings.find('.') is 3: #a string with 3 dots is the IP address
+                    ip = strings
+                elif strings.find('.') is 4: #a string with 4 dots is the mac address
+                    mac = strings.lower()
+                    self.host_list.append(Host(mac, ip))
 
-    For each port find ip adress
-    '''
+        #Filter the data and store data in mac object lists
+        mac_file = open(self.mac_filename, 'r')
+        for line in mac_file:
+            x = line.split()
+            for strings in x:
+                if strings.find('.') is 4: #a string with 4 dots is the mac address
+                    mac = strings.lower()
+                elif '/' in strings: #If there is a / in the string then this is the port
+                    port = strings
+                    self.mac_list.append(Mac(mac, port))
 
+        self.mac_list.sort(key=lambda x: x.port) #Sort on port string
+
+        for c in self.mac_list:
+            print(c)
+
+        #Clear lists
+        self.host_list.clear()
+        self.mac_list.clear()
 
         #Check runtime for performance
         finish = datetime.datetime.now()
         print(finish - start)
 
-##############################################################################################################
+
+class Host():
+    """
+    :return: string with IP addres, string with mac address
+    """
+    def __init__(self, ip_address, mac_address):
+        self.ip_address = ip_address
+        self.mac_address = mac_address
+    def __str__(self):
+        return "%s%s" % (self.ip_address, self.mac_address)
+
+
+class Mac():
+    """
+    :return: string with mac address and port
+    """
+    def __init__(self, mac_address, port):
+        self.mac_address = mac_address
+        self.port = port
+    def __str__(self):
+        return "%s%s" % (self.mac_address, self.port)
 
 
 class CheckData:
+    """
+    :param title: Title of message dialog when text is no int
+    :param text: The value as a string to be tested if it is an integer
+    :return: -1 if test fails, text is not an integer
+    """
+
     def int(title, text):
-        """
-        :param title: Title of message dialog when text is no int
-        :param text: The value as a string to be tested if it is an integer
-        :return: -1 if test fails, text is not an integer
-        """
         try:
             if int(text) >= 0:
                 return int(text)
@@ -85,9 +179,8 @@ class CheckData:
             MessageBox.error(title, 'Value ' + text + ' is not a number')
             return -1
 
- ###############################################################################################################
 
-class MessageBox:
+class MessageBox():
     def info(text, text2=None):
         dialog = Gtk.MessageDialog(None,
                                    Gtk.DialogFlags.MODAL,
@@ -132,8 +225,7 @@ class MessageBox:
         response = dialog.run()
         dialog.destroy()
         return response
-
-# #############################################################################################################
+        #Get response of open file dialog
 
 
 class FileDialog:
@@ -141,8 +233,8 @@ class FileDialog:
         self.filename = None
         self.response = None
 
-    def open_file(self):
-        file_open_dialog = Gtk.FileChooserDialog(title="Open CSV file", buttons=(
+    def open_file(self, title):
+        file_open_dialog = Gtk.FileChooserDialog(title=title, buttons=(
             Gtk.STOCK_CANCEL, Gtk.ResponseType.CANCEL, Gtk.STOCK_OPEN, Gtk.ResponseType.OK))
 
         FileDialog.add_filters(file_open_dialog)
