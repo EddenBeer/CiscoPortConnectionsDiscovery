@@ -11,6 +11,7 @@ import datetime
 
 from gi.repository import Gtk
 
+
 class Main():
     def __init__(self):
         self.builder = Gtk.Builder()
@@ -34,9 +35,10 @@ class Main():
 
         #Declaration of variables
         self.arp_filename = ''
-        self.arp_filename = ''
+        self.mac_filename = ''
         self.host_list = []
         self.mac_list = []
+        self.vendor_list = []
         self.file_list = []
         self.found = False
         self.chb_from_switch_active = False
@@ -82,8 +84,28 @@ class Main():
         :param:
         :return:
         """
+        if self.select_files() == 1:
+            start = datetime.datetime.now()  # For performance testing
+            if self.open_arp_file() == 1:
+                if self.open_mac_file() == 1:
+                    if self.open_vendor_file() == 1:
+                        self.add_vendor_to_maclist()
+                        self.find_ip_address()
+                        #Check runtime for performance
+                        finish = datetime.datetime.now()
+                        print(finish - start)
+                        self.save_result()
+        self.clear_lists()
+
+    def select_files(self):
+        """
+        Select the arp and mac files and store the names
+        :param:
+        :return:
+        """
+        #TODO on statusbar display filename only, subtract path
         fd_arp = FileDialog
-        fd_arp.open_file(self, 'Select the ARP text file')
+        fd_arp.open_file(self, 'Select the ARP text file or netscan csv file')
         #Check the response of the dialog
         if fd_arp.get_response(self) == Gtk.ResponseType.OK:
             self.arp_filename = fd_arp.get_filename(self)
@@ -113,8 +135,26 @@ class Main():
             del fd_mac
             return
         del fd_mac
+        return 1
 
-        #Filter the data and store data in host object lists
+    def connect_to_switch(self):
+        """
+        Get the data from the switch
+        :param:
+        :return:
+        """
+        #TODO write logic to connect to switch
+
+    def get_data_from_switch(self):
+         """
+        Get the data from the switch
+        :param:
+        :return:
+        """
+        #TODO write logic get the data from the switch
+
+    def open_arp_file(self):
+        #Open the ARP file
         try:
             arp_file = open(self.arp_filename, 'r')
         except FileNotFoundError:
@@ -123,15 +163,15 @@ class Main():
             return
         except:
             error = MessageBox.error
-            error('Can not open file')
+            error('Can not open ARP file')
             return
 
-       #Make program more readable
-        _append = self.host_list.append
+        #Filter the data and store data from file in host object lists
+        _append = self.host_list.append  # Make program more readable
 
-        if self.chb_netscan_active: # Select netscan file or mac file from switch
+        if self.chb_netscan_active:  # Select netscan file or mac file from switch
             try:
-                for line in arp_file: # Netscan file
+                for line in arp_file:  # Netscan file
                     x = line.split(',')
                     for strings in x:
                         if strings.count('.') == 3:  # a string with 3 dots is the IP address
@@ -143,7 +183,7 @@ class Main():
                             _append(Host(ip, mac))
             except:
                 error = MessageBox.error
-                error('Netscan file error', 'Decode error, file is not a CSV file.')
+                error('Netscan file error', 'Decode error.')
                 return
 
         else:
@@ -158,10 +198,12 @@ class Main():
                             _append(Host(ip, mac))
             except:
                 error = MessageBox.error
-                error('mac address file error', 'Decode error, file is not a CSV file.')
+                error('ARP file error', 'Decode error.')
                 return
+        return 1
 
-        #Filter the data and store data in mac object lists
+    def open_mac_file(self):
+        #Open the MAC file
         try:
             mac_file = open(self.mac_filename, 'r')
         except FileNotFoundError:
@@ -170,11 +212,11 @@ class Main():
             return
         except:
             error = MessageBox.error
-            error('Can not open file')
+            error('Can not open mac file')
             return
 
-        #Make program more readable
-        _append = self.mac_list.append
+        #Filter the data and store data in mac object lists
+        _append = self.mac_list.append  #Make program more readable
 
         try:
             for line in mac_file:
@@ -184,27 +226,76 @@ class Main():
                         mac = strings.lower()
                     elif '/' in strings:  # If there is a / in the string then this is the port
                         port = strings
-                        _append(Mac(mac, port))
+                        _append(Mac(mac, port, ''))
         except:
             error = MessageBox.error
-            error('mac address file error', 'Decode error, file is not a CSV file.')
+            error('mac address file error', 'Decode error.')
             return
 
         self.mac_list.sort(key=lambda x: x.port) #Sort on port string
+        return 1
 
-        #Make program more readable
-        _append = self.file_list.append
+    def open_vendor_file(self):
+        #Open the vendor file from Wireshark
+        try:
+            vendor_file = open('vendor list.txt', 'r')
+        except FileNotFoundError:
+            error = MessageBox.error
+            error('File not found')
+            return
+        except:
+            error = MessageBox.error
+            error('Can not open vendor file')
+            return
+
+        #For each mac address in the object list, look for the vendor
+        _append = self.vendor_list.append  #Make program more readable
+        try:
+            for line in vendor_file:
+                if line.count(':') >= 2:
+                    x = line.split()
+                    if not '#' in x[0]:
+                        if '/' in x[0]:
+                            # Remove the / and anything after the /
+                            y = x[0].split('/')
+                            string = y[0].lower()
+                        else:
+                            string = x[0].lower()
+
+                        mac = string.replace(':','')  # Remove the : from the mac address
+                        vendor = x[1]
+                        _append(Vendor(mac, vendor))
+        except:
+            error = MessageBox.error
+            error('vendor file error', 'Decode error.')
+            return
+        return 1
+
+    def add_vendor_to_maclist(self):
+        # Add the vendor to the mac list
+        for mac in self.mac_list:
+            for vendor in self.vendor_list:
+                mac_address = str(mac.mac_address).replace('.','')
+                if vendor.mac_address in mac_address:
+                    mac.vendor = vendor.vendor
+                    break
+
+    def find_ip_address(self):
+        #For each mac address in the object list, look trough the host object list to find the IP address
+        _append = self.file_list.append  # Make program more readable
 
         for sw_port in self.mac_list:
             self.found = False
             for host in self.host_list:
                 if sw_port.mac_address == host.mac_address:
-                    _append(Text(';'.join([sw_port.port, host.ip_address, host.mac_address, "\n"])))
+                    _append(Text(','.join([sw_port.port, host.ip_address, host.mac_address, sw_port.vendor, "\n"])))
                     self.found = True
+                    print(sw_port.vendor)
                     break
             if self.found is False:  # If the mac address is not found append with IP unknown
-                _append(Text(';'.join([sw_port.port, 'Unknown', sw_port.mac_address, "\n"])))
+                _append(Text(','.join([sw_port.port, 'Unknown', sw_port.mac_address, sw_port.vendor, "\n"])))
 
+    def save_result(self):
         #Get the filename
         fd = FileDialog
         fd.save_file(self, 'Select a filename:')
@@ -215,8 +306,6 @@ class Main():
             MessageBox.warning('No file is selected', 'Start discovery again and select a filename.')
             return
         del fd  # Delete filedialog object
-
-        start = datetime.datetime.now()  #For performance testing
 
         try:
             for line in self.file_list:  # Write the text to a file
@@ -232,22 +321,21 @@ class Main():
 
         file.close()
 
+    def clear_lists(self):
         #Clear lists
         self.host_list.clear()
         self.mac_list.clear()
-
-        #Check runtime for performance
-        finish = datetime.datetime.now()
-        print(finish - start)
+        self.file_list.clear()
 
 
 class Host():
     """
-    :return: string with IP addres, string with mac address
+    :return: string with IP address, string with mac address
     """
     def __init__(self, ip_address, mac_address):
         self.ip_address = ip_address
         self.mac_address = mac_address
+
     def __str__(self):
         return "%s%s" % (self.ip_address, self.mac_address)
 
@@ -256,11 +344,25 @@ class Mac():
     """
     :return: string with mac address and port
     """
-    def __init__(self, mac_address, port):
+    def __init__(self, mac_address, port, vendor):
         self.mac_address = mac_address
         self.port = port
+        self.vendor = vendor
+
     def __str__(self):
-        return "%s%s" % (self.mac_address, self.port)
+        return "%s%s%s" % (self.mac_address, self.port, self.vendor)
+
+
+class Vendor():
+    """
+    :return: string with mac address and vendor
+    """
+    def __init__(self, mac_address, vendor):
+        self.mac_address = mac_address
+        self.vendor = vendor
+
+    def __str__(self):
+        return "%s%s" % (self.mac_address, self.vendor)
 
 
 class Text():
@@ -269,6 +371,7 @@ class Text():
     """
     def __init__(self, row):
         self.row = row
+
     def __str__(self):
         return "%s" % (self.row)
 
